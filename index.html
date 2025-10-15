@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ashish PDF Tools — Image to PDF</title>
+  <meta name="description" content="Convert Images (JPG, PNG) to PDF instantly in your browser. No upload, no signup, free." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- jsPDF UMD build -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    /* minor custom styles */
+    .drop-area {
+      border-style: dashed;
+    }
+    .thumb {
+      max-width: 100px;
+      max-height: 100px;
+    }
+    .grabbable { cursor: grab; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex flex-col">
+
+  <header class="bg-white shadow-sm">
+    <div class="container mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-md bg-blue-600 text-white flex items-center justify-center font-bold">AP</div>
+        <div>
+          <h1 class="text-lg font-semibold">AshishPDF Tools</h1>
+          <p class="text-sm text-slate-500">Image → PDF converter — browser-only, no uploads</p>
+        </div>
+      </div>
+      <nav class="text-sm text-slate-600 hidden md:block">
+        <a class="mr-4" href="#">Home</a>
+        <a class="mr-4" href="#">Other Tools</a>
+        <a href="#">Contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container mx-auto px-4 py-8 flex-1">
+    <section class="max-w-4xl mx-auto bg-white rounded-lg shadow p-6">
+      <h2 class="text-2xl font-semibold mb-2">Image → PDF</h2>
+      <p class="text-sm text-slate-600 mb-4">Drag & drop images or click to add. Reorder images by dragging thumbnails. Then click <em>Convert to PDF</em>.</p>
+
+      <div id="dropArea" class="drop-area border-2 border-dashed border-slate-200 rounded p-6 text-center mb-4 cursor-pointer">
+        <input id="fileInput" type="file" accept="image/*" multiple class="hidden" />
+        <div class="flex flex-col items-center justify-center gap-2">
+          <svg class="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16v4h10v-4M7 8l5-5 5 5M12 3v13" /></svg>
+          <div class="text-slate-700">Drop images here or <button id="browseBtn" class="text-blue-600 underline">browse</button></div>
+          <div class="text-sm text-slate-400">Supports JPG, PNG, GIF. Use SHIFT to select many files.</div>
+        </div>
+      </div>
+
+      <div id="thumbsContainer" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 mb-4"></div>
+
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div class="flex gap-3 items-center">
+          <label class="flex items-center gap-2 text-sm">
+            Page size:
+            <select id="pageSize" class="border rounded px-2 py-1">
+              <option value="a4">A4 (210 × 297 mm)</option>
+              <option value="letter">Letter (8.5 × 11 in)</option>
+              <option value="custom">Auto (image size)</option>
+            </select>
+          </label>
+
+          <label class="flex items-center gap-2 text-sm">
+            Margin (mm):
+            <input id="margin" type="number" value="10" min="0" class="w-20 border rounded px-2 py-1" />
+          </label>
+
+          <label class="flex items-center gap-2 text-sm">
+            File name:
+            <input id="fileName" type="text" value="converted.pdf" class="w-44 border rounded px-2 py-1" />
+          </label>
+        </div>
+
+        <div class="flex gap-2">
+          <button id="clearBtn" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded">Clear</button>
+          <button id="convertBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Convert to PDF</button>
+        </div>
+      </div>
+
+      <div id="status" class="mt-4 text-sm text-slate-600"></div>
+    </section>
+
+    <section class="max-w-4xl mx-auto mt-6 text-sm text-slate-500">
+      <p>Tip: For best results, upload high-resolution images. This tool runs entirely in your browser — your files never leave your device.</p>
+      <p class="mt-2">When you're ready to monetize: add AdSense script inside the &lt;head&gt; and optionally add a paid "bulk" or "no-ads" option later.</p>
+    </section>
+  </main>
+
+  <footer class="bg-white border-t py-4">
+    <div class="container mx-auto px-4 text-sm text-slate-500">© <span id="year"></span> AshishPDF Tools — Built with ❤ · No uploads • Privacy-friendly</div>
+  </footer>
+
+<script>
+  // small helpers & state
+  const dropArea = document.getElementById('dropArea');
+  const fileInput = document.getElementById('fileInput');
+  const browseBtn = document.getElementById('browseBtn');
+  const thumbsContainer = document.getElementById('thumbsContainer');
+  const convertBtn = document.getElementById('convertBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const status = document.getElementById('status');
+  const pageSizeSelect = document.getElementById('pageSize');
+  const marginInput = document.getElementById('margin');
+  const fileNameInput = document.getElementById('fileName');
+  const yearSpan = document.getElementById('year');
+  yearSpan.textContent = new Date().getFullYear();
+
+  let files = []; // array of {file, dataUrl, name}
+
+  // drag & drop handling
+  ;['dragenter','dragover'].forEach(ev => {
+    dropArea.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      dropArea.classList.add('bg-slate-50');
+    });
+  });
+  ;['dragleave','drop'].forEach(ev => {
+    dropArea.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      dropArea.classList.remove('bg-slate-50');
+    });
+  });
+
+  dropArea.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    const dropped = Array.from(dt.files).filter(f => f.type.startsWith('image/'));
+    handleNewFiles(dropped);
+  });
+
+  browseBtn.addEventListener('click', (e) => { e.stopPropagation(); fileInput.click(); });
+  dropArea.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    const chosen = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+    handleNewFiles(chosen);
+    fileInput.value = '';
+  });
+
+  clearBtn.addEventListener('click', () => {
+    files = []; thumbsContainer.innerHTML = ''; status.textContent = '';
+  });
+
+  function handleNewFiles(list) {
+    if (!list.length) return;
+    const readers = list.map(f => readFileAsDataURL(f).then(dataUrl => ({file: f, dataUrl, name: f.name})));
+    Promise.all(readers).then(items => {
+      files = files.concat(items);
+      renderThumbs();
+    });
+  }
+
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(file);
+    });
+  }
+
+  function renderThumbs() {
+    thumbsContainer.innerHTML = '';
+    files.forEach((item, idx) => {
+      const div = document.createElement('div');
+      div.className = 'bg-slate-50 p-2 rounded flex flex-col items-center gap-2 grabbable';
+      div.setAttribute('draggable', true);
+      div.dataset.index = idx;
+
+      const img = document.createElement('img');
+      img.src = item.dataUrl;
+      img.className = 'thumb object-contain';
+      img.alt = item.name;
+
+      const label = document.createElement('div');
+      label.className = 'text-xs text-slate-600 truncate w-24 text-center';
+      label.textContent = item.name;
+
+      const btns = document.createElement('div');
+      btns.className = 'flex gap-1';
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'text-xs text-red-600';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        files.splice(idx, 1);
+        renderThumbs();
+      });
+
+      btns.appendChild(removeBtn);
+
+      div.appendChild(img);
+      div.appendChild(label);
+      div.appendChild(btns);
+      thumbsContainer.appendChild(div);
+
+      // drag reorder
+      div.addEventListener('dragstart', (ev) => {
+        ev.dataTransfer.setData('text/plain', idx.toString());
+      });
+      div.addEventListener('dragover', (ev) => { ev.preventDefault(); });
+      div.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        const from = parseInt(ev.dataTransfer.getData('text/plain'), 10);
+        const to = parseInt(div.dataset.index, 10);
+        if (!isNaN(from) && !isNaN(to)) {
+          const item = files.splice(from,1)[0];
+          files.splice(to,0,item);
+          renderThumbs();
+        }
+      });
+    });
+  }
+
+  // Convert to PDF
+  convertBtn.addEventListener('click', async () => {
+    if (!files.length) { status.textContent = 'Please add at least one image.'; return; }
+    status.textContent = 'Preparing PDF...';
+
+    try {
+      // using jsPDF
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: 'mm' }); // we'll set orientation and format per page
+
+      const pageSize = pageSizeSelect.value; // 'a4' | 'letter' | 'custom'
+      const margin = Math.max(0, Number(marginInput.value) || 0);
+
+      for (let i = 0; i < files.length; i++) {
+        const img = await loadImage(files[i].dataUrl);
+        // compute page dimensions in mm
+        let pageWmm, pageHmm, orientation = 'portrait';
+        if (pageSize === 'a4') { pageWmm = 210; pageHmm = 297; }
+        else if (pageSize === 'letter') { pageWmm = 216; pageHmm = 279; }
+        else {
+          // auto: base page size on image pixels and scale to fit A4-ish by default
+          // we'll use dynamic sized page in jsPDF by setting format: [w,h]
+          // convert px to mm: px * 25.4 / dpi ; assume 96 dpi for simplicity
+          const dpi = 96;
+          pageWmm = (img.width * 25.4 / dpi);
+          pageHmm = (img.height * 25.4 / dpi);
+        }
+
+        // choose orientation based on image aspect
+        orientation = (img.width > img.height) ? 'landscape' : 'portrait';
+        if ((orientation === 'landscape' && pageWmm < pageHmm) || (orientation === 'portrait' && pageHmm < pageWmm)) {
+          // swap if mismatch
+          [pageWmm, pageHmm] = [pageHmm, pageWmm];
+        }
+
+        // available area
+        const availW = pageWmm - margin * 2;
+        const availH = pageHmm - margin * 2;
+
+        // compute image render size
+        // convert image pixel dims to mm assuming 96dpi
+        const dpi = 96;
+        const imgWmm = img.width * 25.4 / dpi;
+        const imgHmm = img.height * 25.4 / dpi;
+        let renderW = imgWmm, renderH = imgHmm;
+
+        // scale to fit
+        const scale = Math.min(availW / imgWmm, availH / imgHmm, 1);
+        renderW = imgWmm * scale;
+        renderH = imgHmm * scale;
+
+        // if first page, set correct format and orientation via internal properties
+        if (i === 0) {
+          pdf.setProperties({ title: document.title });
+          // Recreate pdf with proper page size/orientation if custom size used
+          pdf.internal.pageSize.setWidth(pageWmm);
+          pdf.internal.pageSize.setHeight(pageHmm);
+          // orientation isn't changeable per se with internal API; jsPDF uses current size though
+        } else {
+          pdf.addPage([pageWmm, pageHmm], orientation);
+        }
+
+        // center image
+        const x = (pageWmm - renderW) / 2;
+        const y = (pageHmm - renderH) / 2;
+
+        // Add image - convert to JPEG to reduce size if needed
+        // Accepts dataURL and type
+        const imgType = detectImageType(files[i].dataUrl);
+        // use canvas to re-encode for jsPDF if needed
+        const canvasDataUrl = await drawImageToCanvasDataUrl(img, imgType === 'image/png' ? 'image/png' : 'image/jpeg', 0.9);
+
+        pdf.addImage(canvasDataUrl, 'JPEG', x, y, renderW, renderH);
+      }
+
+      const outName = (fileNameInput.value && fileNameInput.value.trim()) ? fileNameInput.value.trim() : 'converted.pdf';
+      pdf.save(outName);
+      status.textContent = 'PDF generated — download started.';
+    } catch (err) {
+      console.error(err);
+      status.textContent = 'Error: ' + (err.message || err);
+    }
+  });
+
+  // small image helpers
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  function detectImageType(dataUrl) {
+    if (!dataUrl) return 'image/jpeg';
+    if (dataUrl.startsWith('data:image/png')) return 'image/png';
+    if (dataUrl.startsWith('data:image/webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  function drawImageToCanvasDataUrl(img, mime='image/jpeg', quality=0.9) {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL(mime, quality));
+    });
+  }
+</script>
+
+</body>
+</html>
